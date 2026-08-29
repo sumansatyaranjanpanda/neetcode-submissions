@@ -89,21 +89,25 @@ def notion_request(method, path, body=None):
         return json.loads(resp.read().decode())
 
 
-def problem_exists(name: str) -> bool:
+def problem_exists(slug: str, name: str) -> bool:
     result = notion_request(
         "POST",
         f"/databases/{NOTION_DATABASE_ID}/query",
-        {"filter": {"property": "Problem", "title": {"equals": name}}},
+        {"filter": {"or": [
+            {"property": "Slug", "rich_text": {"equals": slug}},
+            {"property": "Problem", "title": {"equals": name}},
+        ]}},
     )
     return len(result.get("results", [])) > 0
 
 
-def create_problem_page(name, topic, difficulty, date_solved, flagged=False):
+def create_problem_page(slug, name, topic, difficulty, date_solved, flagged=False):
     notes = "Auto-synced from GitHub commit."
     if flagged:
         notes += " Topic/difficulty unconfirmed — new slug, please verify in Notion."
     properties = {
         "Problem": {"title": [{"text": {"content": name}}]},
+        "Slug": {"rich_text": [{"text": {"content": slug}}]},
         "Status": {"select": {"name": "Solved"}},
         "Review Stage": {"select": {"name": "New"}},
         "Date Solved": {"date": {"start": date_solved}},
@@ -160,11 +164,11 @@ def main():
             flagged = True
             flagged_slugs.append(slug)
 
-        if problem_exists(name):
+        if problem_exists(slug, name):
             continue
 
         date_solved = first_commit_date(slug)
-        create_problem_page(name, topic, difficulty, date_solved, flagged=flagged)
+        create_problem_page(slug, name, topic, difficulty, date_solved, flagged=flagged)
         created += 1
         print(f"Created: {name}" + (" [FLAGGED: unknown slug, needs tagging]" if flagged else ""))
 
