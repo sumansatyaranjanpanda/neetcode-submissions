@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 100   # enough commit history to catch anything missed
+          fetch-depth: 0     # full history — needed to find each problem's true first-solved date
 
       - uses: actions/setup-python@v5
         with:
