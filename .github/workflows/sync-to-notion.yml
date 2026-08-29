@@ -1,0 +1,27 @@
+# Place this file at: .github/workflows/sync-to-notion.yml  (in your neetcode-submissions repo)
+name: Sync NeetCode commits to Notion
+
+on:
+  push:
+    branches: [main]        # fires the moment NeetCode's GitHub Sync commits a new solve
+  schedule:
+    - cron: '30 18 * * *'   # 6:30 PM UTC = 12:00 AM IST daily, as a safety-net catch-all
+  workflow_dispatch: {}     # lets you trigger it manually from the Actions tab too
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 100   # enough commit history to catch anything missed
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Sync to Notion
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+        run: python scripts/sync_to_notion.py
