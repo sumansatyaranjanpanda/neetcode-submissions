@@ -14,7 +14,6 @@ stdlib only, no pip install needed.
 
 import json
 import os
-import re
 import subprocess
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -24,11 +23,12 @@ NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID", "7971e8ea1d324d9ab5bd3
 NOTION_VERSION = "2022-06-28"
 NOTION_API = "https://api.notion.com/v1"
 
-COMMIT_RE = re.compile(r"^Add:\s+(?P<slug>[a-z0-9\-]+)\s+-\s+submission-\d+", re.IGNORECASE)
+SOLUTIONS_ROOT = "Data Structures & Algorithms"
 
 # Known slug -> (Problem Name, Topic, Difficulty). Extend this as new problems appear —
 # anything not in here still gets logged, just flagged for you to tag manually in Notion.
 SLUG_MAP = {
+    "merge-k-sorted-linked-lists": ("Merge K Sorted Lists", "Heap", "Hard"),
     "is-anagram": ("Valid Anagram", "Arrays & Hashing", "Easy"),
     "two-integer-sum": ("Two Sum", "Arrays & Hashing", "Easy"),
     "anagram-groups": ("Group Anagrams", "Arrays & Hashing", "Medium"),
@@ -118,35 +118,40 @@ def create_problem_page(name, topic, difficulty, date_solved, flagged=False):
     notion_request("POST", "/pages", {"parent": {"database_id": NOTION_DATABASE_ID}, "properties": properties})
 
 
-def get_recent_commits(limit=100):
+def list_solved_slugs():
+    """Reads the actual file tree instead of commit messages — works identically for a
+    single NeetCode auto-commit or a multi-problem Bulk Sync commit, since both just
+    add files under 'Data Structures & Algorithms/<slug>/submission-N.py'."""
     out = subprocess.run(
-        ["git", "log", f"-{limit}", "--pretty=format:%H|%ad|%s", "--date=short"],
+        ["git", "ls-tree", "-r", "--name-only", "HEAD"],
         capture_output=True, text=True, check=True,
     ).stdout
-    commits = []
-    for line in out.splitlines():
-        if not line.strip():
-            continue
-        sha, date, msg = line.split("|", 2)
-        commits.append({"sha": sha, "date": date, "message": msg})
-    return commits
+    slugs = set()
+    prefix = f"{SOLUTIONS_ROOT}/"
+    for path in out.splitlines():
+        if path.startswith(prefix):
+            rest = path[len(prefix):]
+            slug = rest.split("/")[0]
+            if slug:
+                slugs.add(slug)
+    return slugs
+
+
+def first_commit_date(slug):
+    """Earliest commit date touching this problem's folder = date first solved."""
+    out = subprocess.run(
+        ["git", "log", "--format=%ad", "--date=short", "--", f"{SOLUTIONS_ROOT}/{slug}"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip().splitlines()
+    return out[-1] if out else datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
 def main():
-    commits = get_recent_commits()
-    seen_slugs = set()
+    slugs = list_solved_slugs()
     created = 0
     flagged_slugs = []
 
-    for c in commits:
-        m = COMMIT_RE.match(c["message"])
-        if not m:
-            continue
-        slug = m.group("slug").lower()
-        if slug in seen_slugs:
-            continue
-        seen_slugs.add(slug)
-
+    for slug in sorted(slugs):
         if slug in SLUG_MAP:
             name, topic, difficulty = SLUG_MAP[slug]
             flagged = False
@@ -158,7 +163,8 @@ def main():
         if problem_exists(name):
             continue
 
-        create_problem_page(name, topic, difficulty, c["date"], flagged=flagged)
+        date_solved = first_commit_date(slug)
+        create_problem_page(name, topic, difficulty, date_solved, flagged=flagged)
         created += 1
         print(f"Created: {name}" + (" [FLAGGED: unknown slug, needs tagging]" if flagged else ""))
 
